@@ -31,7 +31,7 @@ jobs:
           pyinstaller --onefile bot.py
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ETS2-Twitch-Bot
           path: dist/bot.exe
