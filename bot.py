@@ -67,6 +67,40 @@ def cleanup_lock_file():
     except:
         pass  # Ignore cleanup errors
 
+def hex_to_readable_profile_name(hex_string):
+    """Convert hex-encoded profile directory name to human-readable string."""
+    try:
+        # Check if it looks like a hex string (only hex chars and reasonable length)
+        if not all(c in '0123456789ABCDEFabcdef' for c in hex_string):
+            return hex_string  # Return original if contains non-hex characters
+        
+        # Must be even length and reasonable size for profile names
+        if len(hex_string) % 2 != 0 or len(hex_string) < 4 or len(hex_string) > 100:
+            return hex_string
+        
+        # Convert hex to bytes, then decode to string
+        decoded_bytes = bytes.fromhex(hex_string)
+        
+        # Try UTF-8 first, then UTF-16 (common for profile names)
+        try:
+            readable_name = decoded_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                readable_name = decoded_bytes.decode('utf-16le')
+            except UnicodeDecodeError:
+                return hex_string  # Return original if can't decode
+        
+        # Clean up any null bytes and non-printable characters
+        readable_name = ''.join(c for c in readable_name if c.isprintable() and c != '\x00')
+        
+        # Only return decoded name if it looks like a reasonable profile name
+        if readable_name and len(readable_name) >= 2 and readable_name.isascii():
+            return readable_name
+        else:
+            return hex_string
+    except Exception:
+        return hex_string  # Return original if any error occurs
+
 # SII decryption key from TheLazyTomcat/SII_Decrypt
 SII_KEY = bytes([
     0x2a, 0x5f, 0xcb, 0x17, 0x91, 0xd2, 0x2f, 0xb6, 0x02, 0x45, 0xb3, 0xd8, 0x36, 0x9e, 0xd0, 0xb2,
@@ -243,53 +277,74 @@ def parse_mod_manager():
     """
     print("🔍 Reading active mods from profile.sii...")
     
-    # Find the correct profile directory with active mods
+    # Find all profile folders that contain actual user profiles
     profile_dirs = []
     ets2_docs_path = os.path.dirname(ETS2_PROFILE_PATH)
     
-    # Check all profile directories (including backups) for active mods
+    # Look for profile directories in ETS2 documents folder
     for item in os.listdir(ets2_docs_path):
         item_path = os.path.join(ets2_docs_path, item)
-        if os.path.isdir(item_path) and 'profile' in item.lower():
-            profile_dirs.append(item_path)
+        if os.path.isdir(item_path):
+            item_lower = item.lower()
+            # Include: profiles, profiles(version).bak
+            # Exclude: steam_profiles, steam_profiles(version).bak  
+            if (item_lower.startswith('profiles') and 
+                not item_lower.startswith('steam_profiles')):
+                profile_dirs.append(item_path)
+                print(f"📁 Found valid profile directory: {item}")
+            elif item_lower.startswith('steam_profiles'):
+                print(f"📁 Skipped steam profile directory: {item}")
     
-    # Add the configured profile path
-    if ETS2_PROFILE_PATH not in profile_dirs:
-        profile_dirs.append(ETS2_PROFILE_PATH)
+    # Only add the configured profile path if it's valid (not steam_profiles)
+    if (ETS2_PROFILE_PATH not in profile_dirs and os.path.exists(ETS2_PROFILE_PATH)):
+        config_dir_name = os.path.basename(ETS2_PROFILE_PATH).lower()
+        if config_dir_name.startswith('profiles') and not config_dir_name.startswith('steam_profiles'):
+            profile_dirs.append(ETS2_PROFILE_PATH)
+            print(f"📁 Added configured profile path: {os.path.basename(ETS2_PROFILE_PATH)}")
+        else:
+            print(f"📁 Skipped configured steam profile path: {os.path.basename(ETS2_PROFILE_PATH)}")
     
-    # Sort profile directories by version number (highest first) to get most recent
-    def extract_version(path):
-        """Extract version number from steam_profiles(X.X.X.Xs) format"""
-        try:
-            basename = os.path.basename(path)
-            if 'steam_profiles(' in basename and ')' in basename:
-                version_part = basename.split('(')[1].split(')')[0]
-                # Remove 's' suffix and convert to version tuple
-                version_clean = version_part.rstrip('s')
-                version_parts = [int(x) for x in version_clean.split('.')]
-                return tuple(version_parts)
-        except:
-            pass
-        return (0, 0, 0, 0)  # Default for non-versioned directories
+    if not profile_dirs:
+        print("❌ No profile directories found")
+        return []
     
-    profile_dirs.sort(key=extract_version, reverse=True)
-    print(f"📂 Profile directories sorted by version: {[os.path.basename(p) for p in profile_dirs[:3]]}")
+    print(f"📂 Scanning {len(profile_dirs)} profile director{'y' if len(profile_dirs) == 1 else 'ies'} for active profiles")
     
-    # Search for profile.sii with active mods
+    # Search all profile directories for profile.sii files and find the most recently used one
+    most_recent_profile = None
+    most_recent_timestamp = 0
+    all_active_profiles = []
+    
     for profile_dir in profile_dirs:
         if not os.path.exists(profile_dir):
             continue
             
-        # Find profile subdirectories
+        print(f"🔍 Scanning profile directory: {os.path.basename(profile_dir)}")
+            
+        # Find all subdirectories in this profile directory
         try:
             subdirs = [d for d in os.listdir(profile_dir) if os.path.isdir(os.path.join(profile_dir, d))]
         except:
+            print(f"   ⚠️ Cannot access directory: {profile_dir}")
             continue
             
         for subdir in subdirs:
+            # Convert hex profile directory name to readable name
+            readable_name = hex_to_readable_profile_name(subdir)
+            profile_display_name = readable_name if readable_name != subdir else f"Profile ({subdir})"
+            
             profile_sii_path = os.path.join(profile_dir, subdir, "profile.sii")
             
             if os.path.exists(profile_sii_path):
+                # Get the modification timestamp of the profile.sii file
+                try:
+                    profile_mtime = os.path.getmtime(profile_sii_path)
+                    from datetime import datetime
+                    readable_time = datetime.fromtimestamp(profile_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    profile_mtime = 0
+                    readable_time = "unknown"
+                
                 # Try to decrypt and parse the profile.sii
                 decrypted_content = decrypt_sii_file(profile_sii_path)
                 
@@ -304,17 +359,57 @@ def parse_mod_manager():
                             except:
                                 pass
                     
-                    if active_mods_count > 0:
-                        print(f"✅ Found active profile with {active_mods_count} mods: {profile_dir}")
-                        
-                        # Parse the mods from this profile
-                        active_mods = parse_profile_for_mods(decrypted_content)
-                        
-                        if active_mods:
-                            print(f"📋 Successfully extracted {len(active_mods)} mods from profile.sii")
-                            return active_mods
-                        else:
-                            print(f"⚠️  Profile has {active_mods_count} mods but extraction failed")
+                    # Include all profiles (regardless of mod count) to find the most recent
+                    profile_info = {
+                        'path': os.path.join(profile_dir, subdir),
+                        'display_name': profile_display_name,
+                        'subdir': subdir,
+                        'mods_count': active_mods_count,
+                        'timestamp': profile_mtime,
+                        'profile_sii_path': profile_sii_path,
+                        'decrypted_content': decrypted_content,
+                        'parent_dir': os.path.basename(profile_dir)
+                    }
+                    all_active_profiles.append(profile_info)
+                    
+                    # Track the most recently modified profile (regardless of mod count)
+                    if profile_mtime > most_recent_timestamp:
+                        most_recent_timestamp = profile_mtime
+                        most_recent_profile = profile_info
+                    
+                    status = f"{active_mods_count} mods" if active_mods_count > 0 else "no mods"
+                    print(f"   📄 {profile_display_name} - {status} (last used: {readable_time})")
+                else:
+                    print(f"   ❌ {profile_display_name} - cannot decrypt profile.sii")
+            else:
+                print(f"   ⚠️ {profile_display_name} - no profile.sii found")
+
+    # Report all found profiles and select the most recent
+    if all_active_profiles:
+        print(f"\n📊 Found {len(all_active_profiles)} profile(s) across all directories:")
+        for profile in sorted(all_active_profiles, key=lambda p: p['timestamp'], reverse=True):
+            from datetime import datetime
+            readable_time = datetime.fromtimestamp(profile['timestamp']).strftime("%Y-%m-%d %H:%M:%S")
+            status = "🏆 MOST RECENT" if profile == most_recent_profile else "  "
+            mods_text = f"{profile['mods_count']} mods" if profile['mods_count'] > 0 else "no mods"
+            print(f"   {status} {profile['display_name']} ({profile['parent_dir']}) - {mods_text} (last used: {readable_time})")
+        
+        if most_recent_profile:
+            print(f"\n✅ Using most recent profile: '{most_recent_profile['display_name']}' from {most_recent_profile['parent_dir']}")
+            
+            # Only proceed with mod parsing if the profile has mods
+            if most_recent_profile['mods_count'] > 0:
+                # Parse the mods from the most recent profile
+                active_mods = parse_profile_for_mods(most_recent_profile['decrypted_content'])
+                
+                if active_mods:
+                    print(f"📋 Successfully extracted {len(active_mods)} mods from most recent profile")
+                    return active_mods
+                else:
+                    print(f"⚠️  Most recent profile has {most_recent_profile['mods_count']} mods but extraction failed")
+            else:
+                print(f"ℹ️  Most recent profile has no active mods")
+                return []
     
     print("❌ No active profile.sii found with mods")
     print("ℹ️  Falling back to comprehensive detection...")
@@ -583,23 +678,31 @@ global_cooldowns = {"mods": 0, "refreshmods": 0}
 
 def check_cooldown(user, command):
     now = time.time()
+    
     # Per-user cooldown
     if user in user_cooldowns and now - user_cooldowns[user] < USER_COOLDOWN:
-        return False
+        remaining = int(USER_COOLDOWN - (now - user_cooldowns[user]))
+        return False, f"⏰ Please wait {remaining} seconds before using commands again."
+    
     # Global cooldown for refreshmods
     if command == "refreshmods" and now - global_cooldowns["refreshmods"] < GLOBAL_COOLDOWN:
-        return False
+        remaining = int(GLOBAL_COOLDOWN - (now - global_cooldowns["refreshmods"]))
+        return False, f"⏰ Please wait {remaining} seconds before refreshing mods again (global cooldown)."
+    
     # Passed cooldown → update
     user_cooldowns[user] = now
     if command == "refreshmods":
         global_cooldowns["refreshmods"] = now
-    return True
+    return True, None
 
 # --- TWITCH COMMANDS ---
 @bot.command(name="mods")
 async def mods_command(ctx):
-    if not check_cooldown(ctx.author.name, "mods"):
+    cooldown_ok, timeout_message = check_cooldown(ctx.author.name, "mods")
+    if not cooldown_ok:
+        await ctx.send(f"@{ctx.author.name}: {timeout_message}")
         return
+    
     mods = get_mod_list(ETS2_PROFILE_PATH, ETS2_MOD_PATH)
     dlcs = get_dlc_list()
     response = format_mod_response(mods, dlcs)
@@ -607,13 +710,16 @@ async def mods_command(ctx):
 
 @bot.command(name="refreshmods")
 async def refreshmods_command(ctx):
-    if not check_cooldown(ctx.author.name, "refreshmods"):
+    cooldown_ok, timeout_message = check_cooldown(ctx.author.name, "refreshmods")
+    if not cooldown_ok:
+        await ctx.send(f"@{ctx.author.name}: {timeout_message}")
         return
+    
     clear_cache()
     mods = get_mod_list(ETS2_PROFILE_PATH, ETS2_MOD_PATH)
     dlcs = get_dlc_list()
-    response = "🔄 Mod cache refreshed! " + format_mod_response(mods, dlcs)
-    await send_chunked_message(ctx, response)
+    response = "✅ Mod cache refreshed! Found " + str(len(mods)) + " active mods. Use !mods to see the list."
+    await ctx.send(f"@{ctx.author.name}: {response}")
 
 # --- START BOT ---
 if __name__ == "__main__":
