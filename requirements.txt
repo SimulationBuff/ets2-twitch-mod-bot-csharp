@@ -1,2 +1,16 @@
+# Core dependencies
 twitchio>=2.0.0,<3.0.0
 requests
+
+# Async I/O improvements
+aiofiles>=23.0.0
+aiohttp>=3.8.0
+
+# Optional but recommended dependencies
+pycryptodome>=3.19.0  # For SII file decryption
+psutil>=5.9.0        # For enhanced process management
+
+# Development/typing (optional)
+# mypy>=1.0.0
+# black>=23.0.0
+# ruff>=0.1.0
