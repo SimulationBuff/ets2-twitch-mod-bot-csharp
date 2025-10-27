@@ -10,10 +10,16 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      auto_format:
+        description: "Auto-format and push changes back (true/false)"
+        required: false
+        default: "false"
 
 env:
   LC_ALL: C.UTF-8
   LANG: C.UTF-8
+  AUTO_FORMAT: "false"
 
 jobs:
   test-and-lint:
@@ -59,9 +65,30 @@ jobs:
           echo "Checking formatting with black..."
           black --check .
 
-      - name: Run tests (with retries and strict options)
+      - name: Run pre-commit and tests (with optional auto-format)
         run: |
           set -euo pipefail
+          echo "Installing pre-commit..."
+          pip install --no-cache-dir pre-commit
+          echo "Running pre-commit (lint/format checks) -- non-fatal..."
+          # Run pre-commit to surface issues; do not fail the job yet so we can optionally auto-fix
+          pre-commit run --all-files || true
+
+          # If AUTO_FORMAT is enabled, run pre-commit hooks that modify files and push changes
+          if [ "${AUTO_FORMAT:-false}" = "true" ]; then
+            echo "AUTO_FORMAT enabled: running pre-commit to auto-fix and push changes..."
+            pre-commit run --all-files
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            if [ -n "$(git status --porcelain)" ]; then
+              git add -A
+              git commit -m "chore(ci): apply pre-commit fixes" || echo "No changes to commit"
+              git push
+            else
+              echo "No changes produced by pre-commit."
+            fi
+          fi
+
           echo "Running pytest with retries..."
           # Retry pytest up to 3 times to mitigate flaky network/timing issues on CI
           for i in 1 2 3; do
