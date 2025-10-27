@@ -206,15 +206,37 @@ namespace ETS2TwitchModBot.Core
     /// Minimal configuration holder for the bot.
     /// Expand this to map to appsettings.json and DI configuration.
     /// </summary>
+    /// <summary>
+    /// Configuration holder for the bot. Values are intentionally basic and designed
+    /// to be populated from appsettings or environment variables by the hosting application.
+    /// </summary>
     public sealed class BotConfig
     {
+        /// <summary>OAuth token for the Twitch bot account (prefer secret storage).</summary>
         public string TwitchToken { get; init; } = string.Empty;
+
+        /// <summary>Twitch channel to join (channel name without leading #).</summary>
         public string TwitchChannel { get; init; } = string.Empty;
+
+        /// <summary>Path to the ETS2 mods folder.</summary>
         public string Ets2ModPath { get; init; } = string.Empty;
+
+        /// <summary>Path to the ETS2 profiles folder.</summary>
         public string Ets2ProfilePath { get; init; } = string.Empty;
+
+        /// <summary>Path to the local Steam install used for DLC detection.</summary>
         public string Ets2SteamPath { get; init; } = string.Empty;
 
+        /// <summary>
+        /// Optional Steam Web API key used to resolve workshop item metadata (display names).
+        /// If provided, the core can call the Steam Web API to translate workshop IDs into names.
+        /// </summary>
+        public string? SteamApiKey { get; init; } = null;
+
+        /// <summary>Per-user cooldown in seconds for commands.</summary>
         public int UserCooldownSeconds { get; init; } = 10;
+
+        /// <summary>Global cooldown in seconds for commands that should be rate-limited globally.</summary>
         public int GlobalCooldownSeconds { get; init; } = 2;
     }
 
