@@ -27,7 +27,8 @@ repos:
         language: python
         types: [python]
         # Auto-fix on commit; remove --fix to only lint without modifying files
-        args: ["--fix", "--line-length=88"]
+        # Ignore E501 here because Black enforces line length/formatting.
+        args: ["--fix", "--line-length=88", "--extend-ignore=E501"]
 
   - repo: https://github.com/psf/black
     rev: 23.9.1
