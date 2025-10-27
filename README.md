@@ -68,4 +68,3 @@ Notes:
 - The `.pre-commit-config.yaml` in the repository configures which hooks run and whether any should automatically fix issues (e.g., Black formats files; Ruff may be configured with `--fix`).
 - CI runs pre-commit checks as part of the build. There's an optional CI workflow input (`auto_format`) that, if enabled by a maintainer, will apply pre-commit fixes in CI and push them back to the branch.
 - It's recommended to run `pre-commit run --all-files` locally before creating a PR to avoid style/lint failures in CI.
-

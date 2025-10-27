@@ -63,10 +63,10 @@ def get_mod_display_name(mod_file):
 ```python
 async def _get_mod_display_name(self, mod_file: Path) -> str:
     """Get human-readable name for a mod file.
-    
+
     Args:
         mod_file: Path to the mod file
-        
+
     Returns:
         Human-readable display name for the mod
     """
@@ -126,7 +126,7 @@ class BotConfig:
     twitch_channel: str
     ets2_mod_path: Path
     # ... other fields
-    
+
     @classmethod
     async def load(cls, config_path: Path = CONFIG_FILE) -> 'BotConfig':
         """Load and validate configuration."""
@@ -175,7 +175,7 @@ def save_cache():
 ```python
 class ModCache:
     """Async mod name cache with persistence."""
-    
+
     async def set(self, key: str, value: str) -> None:
         """Set cached value and save asynchronously."""
         async with self._lock:
