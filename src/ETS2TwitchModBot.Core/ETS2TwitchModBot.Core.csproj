@@ -34,21 +34,28 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0" />
+  </ItemGroup>
 
-    <!-- Twitch integration -->
+  <!-- Optional external dependencies that may not be available on all CI images.
+       To include Twitch/StyleCop packages set EnableExternalDependencies to true
+       either in a Directory.Build.props or by passing -p:EnableExternalDependencies=true
+       to dotnet/MSBuild. Default is false to allow constrained CI environments to restore. -->
+  <PropertyGroup>
+    <EnableExternalDependencies>false</EnableExternalDependencies>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(EnableExternalDependencies)' == 'true'">
+    <!-- Twitch integration (opt-in) -->
     <PackageReference Include="TwitchLib.Client" Version="4.2.0" />
     <PackageReference Include="TwitchLib.Api" Version="4.1.0" />
 
-    <!-- Static analysis / style enforcement -->
+    <!-- Static analysis / style enforcement (opt-in) -->
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0" PrivateAssets="all" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- If the App project is created in the solution, this reference will wire projects together.
-         It is conditional so the core library remains buildable independently. -->
-    <ProjectReference Include="..\ETS2TwitchModBot.App\ETS2TwitchModBot.App.csproj"
-                      Condition="Exists('..\\ETS2TwitchModBot.App\\ETS2TwitchModBot.App.csproj')" />
-  </ItemGroup>
+  <!-- ProjectReference to the App project intentionally removed to avoid circular project references during CI.
+       The core library is designed to build independently. If you need to locally wire the App project,
+       add a ProjectReference in your local solution or restore this block. -->
 
   <!-- Optional: produce a NuGet package on build if you later want to publish -->
   <PropertyGroup>

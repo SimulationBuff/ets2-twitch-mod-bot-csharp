@@ -40,19 +40,17 @@
 
   <ItemGroup>
     <!-- Reference the core project to test its public surface -->
-    <ProjectReference Include="..\..\ets2-twitch-mod-bot-csharp\src\ETS2TwitchModBot.Core\ETS2TwitchModBot.Core.csproj" />
+    <ProjectReference Include="..\..\src\ETS2TwitchModBot.Core\ETS2TwitchModBot.Core.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
-    <!-- Enable coverlet integration when running `dotnet test` with the XPlat code coverage collector (e.g. use --collect:"XPlat Code Coverage") -->
+    <!-- Enable coverlet integration when running dotnet test with the XPlat code coverage collector (use the collect option to enable coverage) -->
     <CollectCoverage>true</CollectCoverage>
     <CoverletOutputFormat>opencover</CoverletOutputFormat>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- Ensure we run tests with a consistent console test runner in CI -->
-    <DotNetCliToolReference Include="dotnet-reportgenerator-globaltool" Version="5.1.23" />
-  </ItemGroup>
+  <!-- Removed legacy DotNetCliToolReference (incompatible with modern SDKs).
+       Use the dotnet global tool on the runner or a dedicated CI step to install/report coverage. -->
 
   <!-- Keep test projects small and focused. Use an .editorconfig placed at repo root to configure StyleCop and formatting rules. -->
 
