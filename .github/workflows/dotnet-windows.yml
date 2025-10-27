@@ -113,13 +113,15 @@ jobs:
     if: github.event_name == 'release'
     steps:
       - name: Download artifacts from workflow
+        id: download-artifact
         uses: actions/download-artifact@v4
         with:
           name: ETS2TwitchModBot-win-x64
           path: ./release-artifacts
 
       - name: Create release assets
-        if: steps.'download-artifact'.outcome == 'success' || always()
+        id: create_release
+        if: ${{ steps['download-artifact'].outcome == 'success' || always() }}
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.release.tag_name }}
