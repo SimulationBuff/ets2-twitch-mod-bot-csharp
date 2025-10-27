@@ -1,0 +1,7 @@
+feat(core): implement DLC detection (Steam & profile scanning) + tests
+
+Add DLCDetector that scans Ets2SteamPath for dlc_*.scs files and falls back to scanning profile .sii files for dlc_<code> tokens. Uses Constants.MAJOR_MAP_DLC to translate known codes to friendly names. This is best-effort and tolerant of IO and permission errors.
+
+Tests: Added xUnit tests covering Steam-path detection, profile-token detection, and empty-path behavior.
+
+CI: Runs on .NET 8 runners; ensure the workflow uses dotnet 8 SDK.

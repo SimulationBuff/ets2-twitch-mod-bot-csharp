@@ -49,10 +49,8 @@
     <CoverletOutputFormat>opencover</CoverletOutputFormat>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- Ensure we run tests with a consistent console test runner in CI -->
-    <DotNetCliToolReference Include="dotnet-reportgenerator-globaltool" Version="5.1.23" />
-  </ItemGroup>
+  <!-- Removed legacy DotNetCliToolReference (incompatible with modern SDKs).
+       Use the dotnet global tool on the runner or a dedicated CI step to install/report coverage. -->
 
   <!-- Keep test projects small and focused. Use an .editorconfig placed at repo root to configure StyleCop and formatting rules. -->
 
