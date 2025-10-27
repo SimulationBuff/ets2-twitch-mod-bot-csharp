@@ -126,6 +126,13 @@ def test_ets2modbot_format_and_chunking_behavior():
         ets2_profile_path=Path("."),
         ets2_steam_path=Path("."),
     )
+    # Ensure an event loop is available for twitchio Bot initialization
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     bot = ETS2ModBot(cfg)
 
     # Test empty response
