@@ -35,10 +35,10 @@ import aiohttp
 
 # Local imports (the project layout places helper modules under lib/ and project root)
 try:
-    # SIIDecryptor lives at project root `decrypt.py` during refactor
-    from decrypt import SIIDecryptor, SII_SIGNATURE_NORMAL, SII_SIGNATURE_ENCRYPTED  # type: ignore
+    # Use the decrypt module from the lib package after refactor
+    from lib.decrypt import SIIDecryptor, SII_SIGNATURE_NORMAL, SII_SIGNATURE_ENCRYPTED  # type: ignore
 except Exception:  # pragma: no cover - defensive import for refactor staging
-    # If running tests before the rest of the refactor, SIIDecryptor may be available elsewhere.
+    # If running tests before the rest of the refactor, SIIDecryptor may be unavailable.
     SIIDecryptor = None  # type: ignore
     SII_SIGNATURE_NORMAL = None  # type: ignore
     SII_SIGNATURE_ENCRYPTED = None  # type: ignore

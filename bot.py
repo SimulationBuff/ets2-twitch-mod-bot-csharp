@@ -954,8 +954,8 @@ try:
     # Cache implementation
     from lib.cache import ModCache, CACHE_FILE as DEFAULT_CACHE_FILE
 
-    # Decrypt utilities
-    from decrypt import (
+    # Decrypt utilities (moved into the lib package)
+    from lib.decrypt import (
         SIIDecryptor,
         SII_SIGNATURE_ENCRYPTED,
         SII_SIGNATURE_NORMAL,
