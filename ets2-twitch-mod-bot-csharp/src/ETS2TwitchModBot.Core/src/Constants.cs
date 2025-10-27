@@ -283,5 +283,77 @@ namespace ETS2TwitchModBot.Core
             var p = new ProfileInfo(profileName ?? "unknown", mods, rawContent: content);
             return p;
         }
+
+        /// <summary>
+        /// Scan the configured profiles folder and attempt to parse all discovered profile files (.sii).
+        /// This method is tolerant of multiple layout variations:
+        ///  - top-level .sii files directly in the profiles folder
+        ///  - profile subfolders containing .sii files (common Steam layout)
+        /// Returns a list of successfully parsed ProfileInfo objects.
+        /// </summary>
+        public async Task<List<ProfileInfo>> ParseProfilesFromFolderAsync(CancellationToken cancellationToken = default)
+        {
+            var outList = new List<ProfileInfo>();
+            var profilesPath = _config.Ets2ProfilePath;
+            if (string.IsNullOrWhiteSpace(profilesPath) || !Directory.Exists(profilesPath)) return outList;
+
+            var dir = new DirectoryInfo(profilesPath);
+
+            // Collect candidate .sii files (top-level and first-level subfolders)
+            var candidates = new List<FileInfo>();
+            try
+            {
+                candidates.AddRange(dir.EnumerateFiles("*.sii", SearchOption.TopDirectoryOnly));
+            }
+            catch
+            {
+                // ignore and continue
+            }
+
+            try
+            {
+                foreach (var sub in dir.EnumerateDirectories("*", SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        candidates.AddRange(sub.EnumerateFiles("*.sii", SearchOption.TopDirectoryOnly));
+                    }
+                    catch
+                    {
+                        // ignore broken folders/permission issues
+                    }
+                }
+            }
+            catch
+            {
+                // ignore enumeration issues
+            }
+
+            // Deduplicate by full path and sort for predictable ordering
+            var distinctCandidates = candidates
+                .GroupBy(f => f.FullName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .OrderBy(f => f.FullName, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            foreach (var f in distinctCandidates)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                try
+                {
+                    var parsed = await ParseProfileAsync(f.FullName, cancellationToken).ConfigureAwait(false);
+                    if (parsed != null)
+                    {
+                        outList.Add(parsed);
+                    }
+                }
+                catch
+                {
+                    // best-effort: skip files that fail to parse/decrypt
+                }
+            }
+
+            return outList;
+        }
     }
 }
