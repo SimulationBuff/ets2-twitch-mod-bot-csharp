@@ -197,24 +197,33 @@ namespace ETS2TwitchModBot.Core
                 if (cancellationToken.IsCancellationRequested) break;
                 var filename = f.Name;
                 string? displayName = null;
+                ModSource source = ModSource.Unknown;
 
                 // 1) Try manifest
                 try
                 {
-                    displayName = ParseManifestNameFromScs(f.FullName);
+                    var manifestName = ParseManifestNameFromScs(f.FullName);
+                    if (!string.IsNullOrWhiteSpace(manifestName))
+                    {
+                        displayName = manifestName;
+                        source = ModSource.Manifest;
+                        // persist manifest resolution to cache (best-effort)
+                        try { await _cache.SetAsync(filename, displayName).ConfigureAwait(false); } catch { }
+                    }
                 }
                 catch
                 {
-                    displayName = null;
+                    // ignore manifest errors and continue
                 }
 
-                // 2) Try cache (only if no manifest)
+                // 2) Try cache (only if manifest didn't yield a name)
                 if (string.IsNullOrWhiteSpace(displayName))
                 {
                     var cached = await _cache.GetAsync(filename).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(cached))
                     {
                         displayName = cached;
+                        source = ModSource.Cache;
                     }
                 }
 
@@ -232,8 +241,9 @@ namespace ETS2TwitchModBot.Core
                             if (!string.IsNullOrWhiteSpace(name))
                             {
                                 displayName = name;
+                                source = ModSource.Workshop;
                                 // persist to cache
-                                await _cache.SetAsync(filename, displayName).ConfigureAwait(false);
+                                try { await _cache.SetAsync(filename, displayName).ConfigureAwait(false); } catch { }
                             }
                         }
                         catch
@@ -247,6 +257,7 @@ namespace ETS2TwitchModBot.Core
                 if (string.IsNullOrWhiteSpace(displayName))
                 {
                     displayName = CleanFilename(filename);
+                    source = ModSource.Filename;
                     // persist to cache (best-effort)
                     try
                     {
@@ -258,7 +269,7 @@ namespace ETS2TwitchModBot.Core
                     }
                 }
 
-                var mod = new ModInfo(filename, displayName, loadOrder: 0, source: ModSource.Unknown, filePath: f.FullName);
+                var mod = new ModInfo(filename, displayName, loadOrder: 0, source: source, filePath: f.FullName);
                 list.Add(mod);
             }
 
