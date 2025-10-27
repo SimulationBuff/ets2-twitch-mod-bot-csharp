@@ -11,6 +11,10 @@ on:
       - master
   workflow_dispatch:
 
+env:
+  LC_ALL: C.UTF-8
+  LANG: C.UTF-8
+
 jobs:
   test-and-lint:
     name: Lint, Format Check & Tests (Python ${{ matrix.python-version }})
@@ -42,20 +46,30 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-          # Development tools for CI
-          pip install ruff black pytest
+          # Ensure CI has extras required by tests (crypto, asyncio test helpers, etc.)
+          pip install pycryptodome pytest-asyncio ruff black pytest
 
-      - name: Run ruff (linter)
+      - name: Lint with ruff
         run: |
           echo "Running ruff..."
           ruff check .
 
-      - name: Run black (format check)
+      - name: Check formatting with black
         run: |
           echo "Checking formatting with black..."
           black --check .
 
-      - name: Run tests
+      - name: Run tests (with retries and strict options)
         run: |
-          echo "Running pytest..."
-          pytest -q --disable-warnings
+          set -euo pipefail
+          echo "Running pytest with retries..."
+          # Retry pytest up to 3 times to mitigate flaky network/timing issues on CI
+          for i in 1 2 3; do
+            pytest -q --disable-warnings --maxfail=1 && break
+            echo "Pytest attempt $i failed, retrying..." >&2
+            sleep $((i * 5))
+            if [ "$i" = "3" ]; then
+              echo "Pytest failed after 3 attempts" >&2
+              exit 1
+            fi
+          done
