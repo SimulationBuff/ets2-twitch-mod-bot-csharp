@@ -15,7 +15,7 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
-        args: ['--maxkb=5120']
+        args: ["--maxkb=5120"]
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     # pinned to a tag so CI and local runs are reproducible
@@ -27,7 +27,7 @@ repos:
         language: python
         types: [python]
         # Auto-fix on commit; remove --fix to only lint without modifying files
-        args: ["--fix", "--max-line-length=88"]
+        args: ["--fix", "--line-length=88"]
 
   - repo: https://github.com/psf/black
     rev: 23.9.1
@@ -42,7 +42,6 @@ repos:
   #   rev: v1.0.2
   #   hooks:
   #     - id: yamllint
-
 # You can add local overrides (files to skip, etc.) by creating .pre-commit-config.yaml in project root
 # or by using .pre-commit-hooks.yaml for custom local hooks. Typical usage:
 #   pip install pre-commit
