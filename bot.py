@@ -1,123 +1,50 @@
 #!/usr/bin/env python3
 """
-ETS2 Twitch Mod Bot - Optimized Version
+Compatibility shim for the ETS2 Twitch Mod Bot.
 
-A Twitch bot that reads and displays active Euro Truck Simulator 2 mods
-and DLC for convoy compatibility checking.
+This file provides a minimal import surface for external code/tests that expect
+to import from `bot`. The real implementation lives under the `lib` package.
 
-This optimized version follows Python best practices:
-- Proper async/await patterns
-- Type hints throughout
-- Structured logging
-- Configuration management
-- Error handling
-- Code organization
-- Resource management
+Usage:
+    from bot import ETS2ModBot, ModParser, ModCache, SIIDecryptor, BotConfig
 """
+# Re-export the public API from the refactored package
+from lib import *  # noqa: F401,F403
 
-import asyncio
-import json
-import logging
-import os
-import re
-import struct
-import sys
-import time
-import zipfile
-import zlib
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
-import aiofiles
-import aiohttp
-from twitchio.ext import commands
-
-# Optional dependencies with graceful fallback
+# Make common names available at module level for backwards compatibility.
+# `lib.__init__` already exposes the primary public symbols.
 try:
-    from Crypto.Cipher import AES
+    # Populate __all__ based on lib's exports
+    from lib import __all__ as _lib_all  # type: ignore
 
-    HAS_CRYPTO = True
-except ImportError:
-    HAS_CRYPTO = False
-    logging.warning("pycryptodome not available - SII decryption disabled")
-
-try:
-    import psutil
-
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
-    logging.warning("psutil not available - enhanced process checking disabled")
-
-
-# Constants
-LOCK_FILE = Path("bot_instance.lock")
-CACHE_FILE = Path("mod_cache.json")
-CONFIG_FILE = Path("config.json")
-STEAM_WORKSHOP_URL = "https://steamcommunity.com/workshop/browse/"
-
-# SII decryption constants
-SII_KEY = bytes(
-    [
-        0x2A,
-        0x5F,
-        0xCB,
-        0x17,
-        0x91,
-        0xD2,
-        0x2F,
-        0xB6,
-        0x02,
-        0x45,
-        0xB3,
-        0xD8,
-        0x36,
-        0x9E,
-        0xD0,
-        0xB2,
-        0xC2,
-        0x73,
-        0x71,
-        0x56,
-        0x3F,
-        0xBF,
-        0x1F,
-        0x3C,
-        0x9E,
-        0xDF,
-        0x6B,
-        0x11,
-        0x82,
-        0x5A,
-        0x5D,
-        0x0A,
+    __all__ = list(_lib_all)
+except Exception:
+    # Fallback: expose common, well-known names
+    __all__ = [
+        "BotConfig",
+        "ETS2ModBot",
+        "CooldownManager",
+        "SingleInstanceLock",
+        "DLCDetector",
+        "MAJOR_MAP_DLC",
+        "ModParser",
+        "ModInfo",
+        "ProfileInfo",
+        "ModCache",
+        "CACHE_FILE",
+        "SIIDecryptor",
+        "SII_SIGNATURE_ENCRYPTED",
+        "SII_SIGNATURE_NORMAL",
+        "HAS_CRYPTO",
     ]
-)
-SII_SIGNATURE_ENCRYPTED = 0x43736353  # "ScsC"
-SII_SIGNATURE_NORMAL = 0x4E696953  # "SiiN"
 
-# Major map DLC for convoy compatibility
-MAJOR_MAP_DLC = {
-    "east": "Going East!",
-    "north": "Scandinavia",
-    "fr": "Vive la France!",
-    "it": "Italia",
-    "balt": "Beyond the Baltic Sea",
-    "iberia": "Iberia",
-    "balkan_w": "West Balkans",
-    "greece": "Greece",
-}
+# Optionally provide some convenience imports to ease migration
+from lib.bot_core import BotConfig, ETS2ModBot  # type: ignore
+from lib.parser import ModParser, ModInfo, ProfileInfo  # type: ignore
+from lib.cache import ModCache, CACHE_FILE  # type: ignore
+from lib.decrypt import SIIDecryptor, SII_SIGNATURE_ENCRYPTED, SII_SIGNATURE_NORMAL, HAS_CRYPTO  # type: ignore
 
-
-@dataclass
-class BotConfig:
-    """Configuration settings for the bot."""
-
-    twitch_token: str
-    twitch_channel: str
-    ets2_mod_path: Path
-    ets2_profile_path: Path
+# Shim complete.
     ets2_steam_path: Path
     user_cooldown_seconds: int = 30
     refresh_global_seconds: int = 120
