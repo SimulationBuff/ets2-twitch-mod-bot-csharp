@@ -148,6 +148,46 @@ namespace ETS2TwitchModBot.Tests
                 result.Should().Contain("Alpha");
                 result.Should().Contain("Bravo");
             }
+            }
+            finally
+            {
+                if (File.Exists(tmp)) File.Delete(tmp);
+            }
+        }
+
+        [Fact]
+        public async Task ModCache_ConcurrentSetGet_DoesNotThrowAndPersists()
+        {
+            var tmp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".json");
+            try
+            {
+                var cache = new ETS2TwitchModBot.Core.ModCache(tmp);
+                await cache.LoadAsync().ConfigureAwait(false);
+
+                // Spawn many concurrent tasks that perform SetAsync and GetAsync to simulate contention.
+                var tasks = Enumerable.Range(0, 50).Select(i => Task.Run(async () =>
+                {
+                    var key = $"mod_{i % 5}.scs";
+                    var value = $"Name_{i}";
+                    await cache.SetAsync(key, value).ConfigureAwait(false);
+                    var got = await cache.GetAsync(key).ConfigureAwait(false);
+                    // Ensure we got something back (last-writer wins is acceptable)
+                    got.Should().NotBeNull();
+                })).ToArray();
+
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+
+                // Reload cache from disk to ensure persistence survived concurrent writes
+                var cache2 = new ETS2TwitchModBot.Core.ModCache(tmp);
+                await cache2.LoadAsync().ConfigureAwait(false);
+
+                for (int i = 0; i < 5; i++)
+                {
+                    var k = $"mod_{i}.scs";
+                    var v = await cache2.GetAsync(k).ConfigureAwait(false);
+                    v.Should().NotBeNull();
+                }
+            }
             finally
             {
                 if (File.Exists(tmp)) File.Delete(tmp);
