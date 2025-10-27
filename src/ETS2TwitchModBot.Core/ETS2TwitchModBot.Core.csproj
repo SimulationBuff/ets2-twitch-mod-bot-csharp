@@ -43,12 +43,9 @@
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0" PrivateAssets="all" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- If the App project is created in the solution, this reference will wire projects together.
-         It is conditional so the core library remains buildable independently. -->
-    <ProjectReference Include="..\ETS2TwitchModBot.App\ETS2TwitchModBot.App.csproj"
-                      Condition="Exists('..\\ETS2TwitchModBot.App\\ETS2TwitchModBot.App.csproj')" />
-  </ItemGroup>
+  <!-- ProjectReference to the App project intentionally removed to avoid circular project references during CI.
+       The core library is designed to build independently. If you need to locally wire the App project,
+       add a ProjectReference in your local solution or restore this block. -->
 
   <!-- Optional: produce a NuGet package on build if you later want to publish -->
   <PropertyGroup>
