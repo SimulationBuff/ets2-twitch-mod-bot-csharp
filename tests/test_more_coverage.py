@@ -163,6 +163,13 @@ def test_ets2modbot_event_command_error_sends_message(tmp_path):
         ets2_steam_path=tmp_path / "steam",
     )
 
+    # Ensure an event loop exists for twitchio Bot initialization
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     bot = ETS2ModBot(cfg)
 
     # Create a fake context with an author and a send coroutine that records messages
