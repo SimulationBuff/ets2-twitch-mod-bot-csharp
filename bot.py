@@ -934,5 +934,58 @@ async def main() -> None:
             bot.lock.release()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# Shim: re-export the public API from the refactored modules.
+# This keeps `import bot` working for external callers/tests while the
+# implementation has been moved into smaller modules under `lib/` and `decrypt.py`.
+try:
+    # Core runtime types and classes
+    from lib.bot_core import (
+        BotConfig,
+        ETS2ModBot,
+        CooldownManager,
+        SingleInstanceLock,
+        DLCDetector,
+        MAJOR_MAP_DLC,
+    )
+
+    # Parsing and datatypes
+    from lib.parser import ModParser, ModInfo, ProfileInfo
+
+    # Cache implementation
+    from lib.cache import ModCache, CACHE_FILE as DEFAULT_CACHE_FILE
+
+    # Decrypt utilities
+    from decrypt import (
+        SIIDecryptor,
+        SII_SIGNATURE_ENCRYPTED,
+        SII_SIGNATURE_NORMAL,
+        HAS_CRYPTO,
+    )
+
+    # Export names for backwards compatibility
+    __all__ = [
+        "BotConfig",
+        "ETS2ModBot",
+        "CooldownManager",
+        "SingleInstanceLock",
+        "DLCDetector",
+        "MAJOR_MAP_DLC",
+        "ModParser",
+        "ModInfo",
+        "ProfileInfo",
+        "ModCache",
+        "DEFAULT_CACHE_FILE",
+        "SIIDecryptor",
+        "SII_SIGNATURE_ENCRYPTED",
+        "SII_SIGNATURE_NORMAL",
+        "HAS_CRYPTO",
+    ]
+
+except Exception:
+    # If the refactor modules are not importable for any reason, fall back to the
+    # existing (legacy) definitions already present in this file. This allows
+    # incremental refactoring without breaking imports.
+    try:
+        __all__  # type: ignore
+    except Exception:
+        __all__ = []
