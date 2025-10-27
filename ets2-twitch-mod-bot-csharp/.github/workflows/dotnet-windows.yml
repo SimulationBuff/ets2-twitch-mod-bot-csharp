@@ -35,7 +35,7 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
@@ -48,8 +48,9 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore ETS2TwitchModBot.sln
 
-      - name: Build solution
-        run: dotnet build ETS2TwitchModBot.sln --configuration ${{ env.CONFIGURATION }} --no-restore
+      - name: Build solution (analyzers)
+        # Ensure analyzers run during build; csproj also sets analyzer properties but pass explicitly here for CI.
+        run: dotnet build ETS2TwitchModBot.sln --configuration ${{ env.CONFIGURATION }} --no-restore -p:RunAnalyzersDuringBuild=true
 
       - name: Run unit tests
         run: dotnet test ETS2TwitchModBot.sln --configuration ${{ env.CONFIGURATION }} --no-build --verbosity normal
@@ -74,6 +75,36 @@ jobs:
           name: ETS2TwitchModBot-win-x64
           path: ${{ env.PUBLISH_DIR }}
           retention-days: 7
+
+  build-linux:
+    name: Build & Test (Linux)
+    runs-on: ubuntu-latest
+    needs: build-windows
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore ETS2TwitchModBot.sln
+
+      - name: Build solution (analyzers)
+        run: dotnet build ETS2TwitchModBot.sln --configuration ${{ env.CONFIGURATION }} --no-restore -p:RunAnalyzersDuringBuild=true
+
+      - name: Run unit tests
+        run: dotnet test ETS2TwitchModBot.sln --configuration ${{ env.CONFIGURATION }} --no-build --verbosity normal
 
   attach-release-artifacts:
     name: Attach artifacts to release (when triggered by a release)
