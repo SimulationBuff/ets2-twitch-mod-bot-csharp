@@ -241,34 +241,102 @@ namespace ETS2TwitchModBot.Core
     }
 
     /// <summary>
-    /// Simple JSON-backed cache for mod filename -> display name.
-    /// This is intentionally minimal; expand with locking and error handling as needed.
+    /// JSON-backed cache for mod filename -> display name.
+    /// Thread- and process-safe: attempts to use a named OS-level mutex on Windows,
+    /// and falls back to a file lock mechanism on non-Windows platforms.
+    /// Writes are performed atomically using a temp file + replace/move strategy.
     /// </summary>
     public sealed class ModCache
     {
         private readonly string _path;
         private readonly ConcurrentDictionary<string, string> _map = new();
 
+        // Named mutex base (used on Windows). Generated from the file path to allow multiple caches
+        // in the system to use distinct mutexes.
+        private readonly string _mutexName;
+
         public ModCache(string filePath)
         {
             _path = filePath ?? throw new ArgumentNullException(nameof(filePath));
+            // Use a deterministic name derived from path. Prefix with "Global\" to ensure system-wide visibility on Windows.
+            var hash = Math.Abs(filePath.GetHashCode());
+            _mutexName = $"Global\\ETS2TwitchModBot_ModCache_{hash:X}";
+        }
+
+        /// <summary>
+        /// Acquire a cross-process lock. On Windows this will create/lock a named Mutex.
+        /// On other platforms we create/open a companion lock file and take an exclusive FileStream.
+        /// Returns an IDisposable that will release the lock when disposed.
+        /// </summary>
+        private IDisposable AcquireLock()
+        {
+            // Use RuntimeInformation check to choose strategy without adding a using at top.
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+            {
+                // Named mutex on Windows
+                var m = new Mutex(false, _mutexName);
+                var got = false;
+                try
+                {
+                    // Wait a reasonable time for acquiring the mutex; tests should not hang indefinitely.
+                    got = m.WaitOne(TimeSpan.FromSeconds(10));
+                }
+                catch
+                {
+                    try { m.Dispose(); } catch { }
+                    throw new InvalidOperationException("Unable to acquire named mutex for cache.");
+                }
+                if (!got)
+                {
+                    try { m.Dispose(); } catch { }
+                    throw new InvalidOperationException("Timeout waiting for named mutex for cache.");
+                }
+                return new MutexReleaser(m);
+            }
+            else
+            {
+                // Fallback: file lock by opening a .lock file exclusively.
+                var lockPath = _path + ".lock";
+                FileStream fs = null!;
+                try
+                {
+                    // Ensure directory exists for the lock file
+                    var dir = Path.GetDirectoryName(lockPath);
+                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
+
+                    // Open or create and take exclusive lock (FileShare.None)
+                    fs = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                    return new FileStreamReleaser(fs, lockPath);
+                }
+                catch
+                {
+                    try { fs?.Dispose(); } catch { }
+                    throw new InvalidOperationException("Unable to acquire file lock for cache.");
+                }
+            }
         }
 
         public async Task LoadAsync()
         {
             try
             {
+                using var l = AcquireLock();
                 if (!File.Exists(_path)) return;
                 var text = await File.ReadAllTextAsync(_path).ConfigureAwait(false);
                 var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(text);
                 if (dict != null)
                 {
+                    // Replace contents atomically in-memory
+                    _map.Clear();
                     foreach (var kv in dict) _map[kv.Key] = kv.Value;
                 }
             }
             catch
             {
-                // ignore errors for now (best-effort)
+                // best-effort: ignore errors but do not crash consumers
             }
         }
 
@@ -276,11 +344,44 @@ namespace ETS2TwitchModBot.Core
         {
             try
             {
+                using var l = AcquireLock();
                 var tmp = _path + ".tmp";
                 var json = System.Text.Json.JsonSerializer.Serialize(_map.ToDictionary(k => k.Key, v => v.Value));
+                // Ensure directory exists
+                var dir = Path.GetDirectoryName(_path);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
                 await File.WriteAllTextAsync(tmp, json).ConfigureAwait(false);
-                File.Copy(tmp, _path, true);
-                File.Delete(tmp);
+
+                // Try atomic replace first; if not supported, fall back to copy/move.
+                try
+                {
+                    if (File.Exists(_path))
+                    {
+                        // File.Replace is atomic on Windows; on other platforms it may still work or throw.
+                        File.Replace(tmp, _path, null);
+                    }
+                    else
+                    {
+                        File.Move(tmp, _path);
+                    }
+                }
+                catch
+                {
+                    // Best-effort fallback
+                    try
+                    {
+                        File.Copy(tmp, _path, true);
+                        File.Delete(tmp);
+                    }
+                    catch
+                    {
+                        // swallow - do not throw to consumers
+                    }
+                }
             }
             catch
             {
@@ -288,111 +389,70 @@ namespace ETS2TwitchModBot.Core
             }
         }
 
-        public Task SetAsync(string filename, string displayName)
+        public async Task SetAsync(string filename, string displayName)
         {
+            if (string.IsNullOrEmpty(filename)) throw new ArgumentException("filename required", nameof(filename));
+            if (displayName is null) throw new ArgumentNullException(nameof(displayName));
+
             _map[filename] = displayName;
-            return SaveAsync();
+            await SaveAsync().ConfigureAwait(false);
         }
 
         public Task<string?> GetAsync(string filename)
         {
+            if (string.IsNullOrEmpty(filename)) return Task.FromResult<string?>(null);
             return Task.FromResult(_map.TryGetValue(filename, out var val) ? val : null);
         }
-    }
 
-    /// <summary>
-    /// Minimal parser stub — implement the profile parsing and manifest parsing here.
-    /// </summary>
-    public sealed class ModParser
-    {
-        private readonly BotConfig _config;
-        private readonly ModCache _cache;
+        // Nested helper types to release locks
 
-        public ModParser(BotConfig config, ModCache cache)
+        private sealed class MutexReleaser : IDisposable
         {
-            _config = config ?? throw new ArgumentNullException(nameof(config));
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-        }
-
-        public static string HexToReadableName(string hex)
-        {
-            if (string.IsNullOrWhiteSpace(hex)) return string.Empty;
-            try
+            private Mutex? _m;
+            public MutexReleaser(Mutex m) => _m = m;
+            public void Dispose()
             {
-                if (hex.Length % 2 != 0) hex = "0" + hex;
-                var bytes = Enumerable.Range(0, hex.Length / 2)
-                    .Select(i => Convert.ToByte(hex.Substring(i * 2, 2), 16))
-                    .ToArray();
-                var s = Encoding.UTF8.GetString(bytes);
-                return s;
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
-
-        public static string CleanFilename(string filename)
-        {
-            // Basic cleanup to match original behavior
-            if (string.IsNullOrWhiteSpace(filename)) return filename ?? string.Empty;
-            var withoutExt = filename.EndsWith(".scs", StringComparison.OrdinalIgnoreCase)
-                ? filename.Substring(0, filename.Length - 4)
-                : filename;
-            withoutExt = withoutExt.Replace('_', ' ').Replace('-', ' ');
-            // Title-case
-            return System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(withoutExt.ToLowerInvariant());
-        }
-
-        public static List<ModInfo> ExtractModsFromContent(string content)
-        {
-            // Simple parser that finds lines like: active_mods[index]: "filename|Display Name"
-            var list = new List<(int idx, string filename, string display)>();
-            if (string.IsNullOrEmpty(content)) return new List<ModInfo>();
-
-            using var sr = new StringReader(content);
-            string? line;
-            while ((line = sr.ReadLine()) != null)
-            {
-                var trimmed = line.Trim();
-                // naive parse
-                if (trimmed.StartsWith("active_mods[", StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    try
+                    if (_m != null)
                     {
-                        var colon = trimmed.IndexOf(':');
-                        if (colon < 0) continue;
-                        var left = trimmed.Substring(0, colon);
-                        var idxStart = left.IndexOf('[');
-                        var idxEnd = left.IndexOf(']');
-                        var idxStr = left.Substring(idxStart + 1, idxEnd - idxStart - 1);
-                        if (!int.TryParse(idxStr, out int idx)) continue;
-                        var q1 = trimmed.IndexOf('"');
-                        var q2 = trimmed.LastIndexOf('"');
-                        if (q1 >= 0 && q2 > q1)
-                        {
-                            var payload = trimmed.Substring(q1 + 1, q2 - q1 - 1);
-                            var parts = payload.Split('|', 2);
-                            var fname = parts.Length > 0 ? parts[0] : string.Empty;
-                            var disp = parts.Length > 1 ? parts[1] : CleanFilename(fname);
-                            list.Add((idx, fname, disp));
-                        }
-                    }
-                    catch
-                    {
-                        // ignore malformed lines
+                        try { _m.ReleaseMutex(); } catch { /* ignore if not owned */ }
+                        _m.Dispose();
                     }
                 }
+                finally
+                {
+                    _m = null;
+                }
             }
-
-            // sort reverse by index (so the highest index comes first) to match older tests' expectations
-            return list.OrderByDescending(x => x.idx)
-                       .Select(x => new ModInfo(x.filename, x.display, x.idx))
-                       .ToList();
         }
 
-        // Add further parsing methods (manifest parsing, folder scan, workshop lookup) here.
+        private sealed class FileStreamReleaser : IDisposable
+        {
+            private FileStream? _fs;
+            private readonly string _lockPath;
+            public FileStreamReleaser(FileStream fs, string lockPath)
+            {
+                _fs = fs;
+                _lockPath = lockPath;
+            }
+            public void Dispose()
+            {
+                try
+                {
+                    try { _fs?.Dispose(); } catch { }
+                    // Clean up lock file if possible
+                    try { if (File.Exists(_lockPath)) File.Delete(_lockPath); } catch { }
+                }
+                finally
+                {
+                    _fs = null;
+                }
+            }
+        }
     }
+
+
 
     /// <summary>
     /// Simple cooldown manager with per-user and global cooldowns.
