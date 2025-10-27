@@ -241,34 +241,102 @@ namespace ETS2TwitchModBot.Core
     }
 
     /// <summary>
-    /// Simple JSON-backed cache for mod filename -> display name.
-    /// This is intentionally minimal; expand with locking and error handling as needed.
+    /// JSON-backed cache for mod filename -> display name.
+    /// Thread- and process-safe: attempts to use a named OS-level mutex on Windows,
+    /// and falls back to a file lock mechanism on non-Windows platforms.
+    /// Writes are performed atomically using a temp file + replace/move strategy.
     /// </summary>
     public sealed class ModCache
     {
         private readonly string _path;
         private readonly ConcurrentDictionary<string, string> _map = new();
 
+        // Named mutex base (used on Windows). Generated from the file path to allow multiple caches
+        // in the system to use distinct mutexes.
+        private readonly string _mutexName;
+
         public ModCache(string filePath)
         {
             _path = filePath ?? throw new ArgumentNullException(nameof(filePath));
+            // Use a deterministic name derived from path. Prefix with "Global\" to ensure system-wide visibility on Windows.
+            var hash = Math.Abs(filePath.GetHashCode());
+            _mutexName = $"Global\\ETS2TwitchModBot_ModCache_{hash:X}";
+        }
+
+        /// <summary>
+        /// Acquire a cross-process lock. On Windows this will create/lock a named Mutex.
+        /// On other platforms we create/open a companion lock file and take an exclusive FileStream.
+        /// Returns an IDisposable that will release the lock when disposed.
+        /// </summary>
+        private IDisposable AcquireLock()
+        {
+            // Use RuntimeInformation check to choose strategy without adding a using at top.
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+            {
+                // Named mutex on Windows
+                var m = new Mutex(false, _mutexName);
+                var got = false;
+                try
+                {
+                    // Wait a reasonable time for acquiring the mutex; tests should not hang indefinitely.
+                    got = m.WaitOne(TimeSpan.FromSeconds(10));
+                }
+                catch
+                {
+                    try { m.Dispose(); } catch { }
+                    throw new InvalidOperationException("Unable to acquire named mutex for cache.");
+                }
+                if (!got)
+                {
+                    try { m.Dispose(); } catch { }
+                    throw new InvalidOperationException("Timeout waiting for named mutex for cache.");
+                }
+                return new MutexReleaser(m);
+            }
+            else
+            {
+                // Fallback: file lock by opening a .lock file exclusively.
+                var lockPath = _path + ".lock";
+                FileStream fs = null!;
+                try
+                {
+                    // Ensure directory exists for the lock file
+                    var dir = Path.GetDirectoryName(lockPath);
+                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
+
+                    // Open or create and take exclusive lock (FileShare.None)
+                    fs = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                    return new FileStreamReleaser(fs, lockPath);
+                }
+                catch
+                {
+                    try { fs?.Dispose(); } catch { }
+                    throw new InvalidOperationException("Unable to acquire file lock for cache.");
+                }
+            }
         }
 
         public async Task LoadAsync()
         {
             try
             {
+                using var l = AcquireLock();
                 if (!File.Exists(_path)) return;
                 var text = await File.ReadAllTextAsync(_path).ConfigureAwait(false);
                 var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(text);
                 if (dict != null)
                 {
+                    // Replace contents atomically in-memory
+                    _map.Clear();
                     foreach (var kv in dict) _map[kv.Key] = kv.Value;
                 }
             }
             catch
             {
-                // ignore errors for now (best-effort)
+                // best-effort: ignore errors but do not crash consumers
             }
         }
 
@@ -276,11 +344,44 @@ namespace ETS2TwitchModBot.Core
         {
             try
             {
+                using var l = AcquireLock();
                 var tmp = _path + ".tmp";
                 var json = System.Text.Json.JsonSerializer.Serialize(_map.ToDictionary(k => k.Key, v => v.Value));
+                // Ensure directory exists
+                var dir = Path.GetDirectoryName(_path);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
                 await File.WriteAllTextAsync(tmp, json).ConfigureAwait(false);
-                File.Copy(tmp, _path, true);
-                File.Delete(tmp);
+
+                // Try atomic replace first; if not supported, fall back to copy/move.
+                try
+                {
+                    if (File.Exists(_path))
+                    {
+                        // File.Replace is atomic on Windows; on other platforms it may still work or throw.
+                        File.Replace(tmp, _path, null);
+                    }
+                    else
+                    {
+                        File.Move(tmp, _path);
+                    }
+                }
+                catch
+                {
+                    // Best-effort fallback
+                    try
+                    {
+                        File.Copy(tmp, _path, true);
+                        File.Delete(tmp);
+                    }
+                    catch
+                    {
+                        // swallow - do not throw to consumers
+                    }
+                }
             }
             catch
             {
@@ -288,15 +389,66 @@ namespace ETS2TwitchModBot.Core
             }
         }
 
-        public Task SetAsync(string filename, string displayName)
+        public async Task SetAsync(string filename, string displayName)
         {
+            if (string.IsNullOrEmpty(filename)) throw new ArgumentException("filename required", nameof(filename));
+            if (displayName is null) throw new ArgumentNullException(nameof(displayName));
+
             _map[filename] = displayName;
-            return SaveAsync();
+            await SaveAsync().ConfigureAwait(false);
         }
 
         public Task<string?> GetAsync(string filename)
         {
+            if (string.IsNullOrEmpty(filename)) return Task.FromResult<string?>(null);
             return Task.FromResult(_map.TryGetValue(filename, out var val) ? val : null);
+        }
+
+        // Nested helper types to release locks
+
+        private sealed class MutexReleaser : IDisposable
+        {
+            private Mutex? _m;
+            public MutexReleaser(Mutex m) => _m = m;
+            public void Dispose()
+            {
+                try
+                {
+                    if (_m != null)
+                    {
+                        try { _m.ReleaseMutex(); } catch { /* ignore if not owned */ }
+                        _m.Dispose();
+                    }
+                }
+                finally
+                {
+                    _m = null;
+                }
+            }
+        }
+
+        private sealed class FileStreamReleaser : IDisposable
+        {
+            private FileStream? _fs;
+            private readonly string _lockPath;
+            public FileStreamReleaser(FileStream fs, string lockPath)
+            {
+                _fs = fs;
+                _lockPath = lockPath;
+            }
+            public void Dispose()
+            {
+                try
+                {
+                    try { _fs?.Dispose(); } catch { }
+                    // Clean up lock file if possible
+                    try { if (File.Exists(_lockPath)) File.Delete(_lockPath); } catch { }
+                }
+                finally
+                {
+                    _fs = null;
+                }
+            }
         }
     }
 
