@@ -6,9 +6,15 @@ import zlib
 import zipfile
 from pathlib import Path
 
-import pytest
+import sys
 
-from bot import (
+# Ensure the repository root is on sys.path so `import bot` resolves to the local package
+# when tests are run from the tests directory or by pytest.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import pytest  # noqa: E402
+
+from bot import (  # noqa: E402
     BotConfig,
     CooldownManager,
     DLCDetector,
