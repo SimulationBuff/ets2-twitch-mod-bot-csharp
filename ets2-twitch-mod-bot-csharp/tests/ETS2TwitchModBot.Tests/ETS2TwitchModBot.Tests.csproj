@@ -44,7 +44,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <!-- Enable coverlet integration when running `dotnet test` with --collect:\"XPlat Code Coverage\" -->
+    <!-- Enable coverlet integration when running `dotnet test` with the XPlat code coverage collector (e.g. use --collect:"XPlat Code Coverage") -->
     <CollectCoverage>true</CollectCoverage>
     <CoverletOutputFormat>opencover</CoverletOutputFormat>
   </PropertyGroup>
