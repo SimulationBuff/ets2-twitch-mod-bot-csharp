@@ -25,7 +25,8 @@ def test_cooldown_manager_user_and_global():
     assert ok3 and msg3 is None
 
     # Test global cooldown for refreshmods
-    okg, _ = cm.check_cooldown("tester", "refreshmods")
+    # Use a different user to avoid hitting the user cooldown from earlier calls
+    okg, _ = cm.check_cooldown("fresh_user", "refreshmods")
     assert okg
 
     okg2, mg2 = cm.check_cooldown("other", "refreshmods")
