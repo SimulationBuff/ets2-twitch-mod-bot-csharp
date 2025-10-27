@@ -1,2 +1,0 @@
-[console_scripts]
-ets2bot-setup = scripts.setup_config:run_setup_interactive
