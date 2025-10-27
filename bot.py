@@ -27,6 +27,7 @@ from lib.parser import ModParser, ModInfo, ProfileInfo
 from lib.cache import ModCache, CACHE_FILE
 from lib.decrypt import (
     SIIDecryptor,
+    SII_KEY,
     SII_SIGNATURE_ENCRYPTED,
     SII_SIGNATURE_NORMAL,
     HAS_CRYPTO,
@@ -45,6 +46,7 @@ __all__: List[str] = [
     "ModCache",
     "CACHE_FILE",
     "SIIDecryptor",
+    "SII_KEY",
     "SII_SIGNATURE_ENCRYPTED",
     "SII_SIGNATURE_NORMAL",
     "HAS_CRYPTO",

@@ -52,6 +52,8 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
+          # Install the package in editable mode so CI tools and tests import the local code
+          pip install -e .
           # Ensure CI has extras required by tests (crypto, asyncio test helpers, etc.)
           pip install pycryptodome pytest-asyncio ruff black pytest
 

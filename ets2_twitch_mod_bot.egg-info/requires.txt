@@ -1,0 +1,6 @@
+twitchio<3.0.0,>=2.0.0
+requests
+aiofiles>=23.0.0
+aiohttp>=3.8.0
+pycryptodome>=3.19.0
+psutil>=5.9.0
