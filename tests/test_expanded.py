@@ -1,7 +1,6 @@
 import asyncio
 import os
 import struct
-import tempfile
 import zlib
 from pathlib import Path
 

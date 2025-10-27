@@ -2,7 +2,6 @@ import asyncio
 import time
 from pathlib import Path
 
-import pytest
 
 from bot import CooldownManager, ModCache, ModParser, BotConfig
 

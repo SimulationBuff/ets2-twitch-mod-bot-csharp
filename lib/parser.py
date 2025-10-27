@@ -23,7 +23,6 @@ Note: this module expects a `config` object passed to ModParser with the followi
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import zipfile

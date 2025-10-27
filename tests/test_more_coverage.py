@@ -1,9 +1,7 @@
 import asyncio
 import os
-import sys
 import zipfile
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -14,7 +12,6 @@ from bot import (
     SIIDecryptor,
     SingleInstanceLock,
     ETS2ModBot,
-    ModInfo,
 )
 
 
