@@ -1,0 +1,137 @@
+root = true
+
+# Top-most EditorConfig file for the C# .NET solution.
+# This enforces consistent formatting and enables a baseline of analyzer rules
+# so CI can treat code-style and analyzer diagnostics consistently across devs and runners.
+
+# Global defaults
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Indentation
+indent_style = space
+indent_size = 4
+tab_width = 4
+
+# Maximum line length suggestion (editors may or may not enforce)
+max_line_length = 120
+
+# -------------------------------------------------------------------
+# C# files
+# -------------------------------------------------------------------
+[*.{csproj,sln,props,targets}]
+indent_style = space
+indent_size = 2
+
+[*.cs]
+# Use four spaces for C# source files
+indent_style = space
+indent_size = 4
+
+# Charset and line endings explicitly
+charset = utf-8
+end_of_line = crlf
+
+# Require file-scoped namespaces by default where possible (you can opt in/out per file)
+# Note: IDEs may provide code actions to convert between styles.
+csharp_style_namespace_declarations = file_scoped:suggestion
+
+# Using directives
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = true
+
+# Qualification preferences
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+
+# Expression preferences
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+
+# Pattern matching
+csharp_style_pattern_matching_over_is_with_cast_check = true:suggestion
+csharp_style_pattern_matching_over_as_with_null_check = true:suggestion
+
+# Null-checking preferences
+dotnet_style_null_propagation = true:suggestion
+csharp_style_throw_expression = true:suggestion
+
+# Prefer explicit tuple names where applicable
+dotnet_style_explicit_tuple_names = true:suggestion
+
+# Prefer collection expression body for single-line properties/methods (taste-based)
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_constructors = false:suggestion
+csharp_style_expression_bodied_properties = when_on_single_line:suggestion
+csharp_style_expression_bodied_indexers = when_on_single_line:suggestion
+
+# Formatting rules
+csharp_preserve_single_line_blocks = true
+csharp_new_line_before_open_brace = all
+csharp_new_line_between_query_expression_clauses = true
+
+# File header standard (optional)
+file_header_template = Copyright (c) SimulationBuff. All rights reserved.
+
+# -------------------------------------------------------------------
+# Analyzer severities - surface common issues as errors in CI
+# -------------------------------------------------------------------
+# Treat IDE suggestions and some analyzers as errors in CI by default.
+# Local editors may present them as suggestions; the build will treat them according to project settings.
+# Lower noise by only escalating important categories here.
+
+# Treat nullable warnings as errors in CI (projects already enable nullable)
+dotnet_diagnostic.CS8602.severity = error
+dotnet_diagnostic.CS8604.severity = error
+
+# Treat some common potential bugs as errors
+dotnet_diagnostic.CA2000.severity = warning        # Dispose objects correctly
+dotnet_diagnostic.CA1822.severity = suggestion     # Mark members as static when possible
+
+# StyleCop analyzers (if present) -- escalate to error so CI fails on style violations
+# Note: The exact IDs depend on StyleCop.Analyzers version; some sample rules:
+dotnet_diagnostic.SA0001.severity = warning
+dotnet_diagnostic.SA1200.severity = error
+dotnet_diagnostic.SA1133.severity = warning
+
+# Ensure analyzer diagnostics are honored in build
+dotnet_analyzer_diagnostic.severity = error
+
+# -------------------------------------------------------------------
+# Tests and generated code
+# -------------------------------------------------------------------
+# Tests: allow slightly different coding style, but still keep basic formatting
+[tests/**.cs]
+# Use same indent but relax some rules if desired
+dotnet_diagnostic.SA1200.severity = warning
+
+# Generated code: treat as generated to silence analyzers (match common patterns)
+[**/Generated/**.cs]
+generated_code = true
+dotnet_analyzer_diagnostic.severity = silent
+
+[**/*Designer.cs]
+generated_code = true
+dotnet_analyzer_diagnostic.severity = silent
+
+# -------------------------------------------------------------------
+# Misc: Keep Python and other language files consistent in the workspace
+# -------------------------------------------------------------------
+[*.py]
+indent_style = space
+indent_size = 4
+charset = utf-8
+end_of_line = lf
+
+# -------------------------------------------------------------------
+# Notes
+# - This file is intended to complement project-level analyzer settings (csproj).
+# - For CI: ensure `dotnet build` is run with analyzers enabled (we set that in csproj/workflows).
+# - If you want stricter rules, move more diagnostics to `error` here or enable additional StyleCop rules in the projects.
+# -------------------------------------------------------------------
