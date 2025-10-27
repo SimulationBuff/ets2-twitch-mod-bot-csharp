@@ -193,5 +193,101 @@ namespace ETS2TwitchModBot.Tests
                 if (File.Exists(tmp)) File.Delete(tmp);
             }
         }
+        [Fact]
+        public async Task ParseProfilesFromFolderAsync_ParsesPlainProfile()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tmpDir);
+            try
+            {
+                // Create a profile folder and a plain-text .sii file with the normal signature
+                var profileFolder = Path.Combine(tmpDir, "profile1");
+                Directory.CreateDirectory(profileFolder);
+                var siiPath = Path.Combine(profileFolder, "profile.sii");
+
+                var content = "some setting: 1\nactive_mods[0]: \"cool_mod.scs|Cool Mod\"\n";
+                var sig = BitConverter.GetBytes(SIIConstants.SII_SIGNATURE_NORMAL);
+                await File.WriteAllBytesAsync(siiPath, sig.Concat(Encoding.UTF8.GetBytes(content)).ToArray()).ConfigureAwait(false);
+
+                var config = new BotConfig { Ets2ProfilePath = tmpDir };
+                var cacheFile = Path.Combine(tmpDir, "cache.json");
+                var cache = new ModCache(cacheFile);
+                await cache.LoadAsync().ConfigureAwait(false);
+
+                var parser = new ModParser(config, cache);
+                var profiles = await parser.ParseProfilesFromFolderAsync().ConfigureAwait(false);
+
+                profiles.Should().NotBeNull();
+                profiles.Should().HaveCountGreaterOrEqualTo(1);
+                var p = profiles.FirstOrDefault(pr => pr.ProfileName.Equals("profile1", StringComparison.OrdinalIgnoreCase));
+                p.Should().NotBeNull();
+                p!.ActiveMods.Should().ContainSingle();
+                p.ActiveMods[0].DisplayName.Should().Contain("Cool Mod");
+            }
+            finally
+            {
+                try { Directory.Delete(tmpDir, true); } catch { }
+            }
+        }
+
+        [Fact]
+        public async Task ParseProfilesFromFolderAsync_ParsesEncryptedProfile()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tmpDir);
+            try
+            {
+                // Create encrypted .sii file using the known SII key
+                var profileFolder = Path.Combine(tmpDir, "profile_enc");
+                Directory.CreateDirectory(profileFolder);
+                var siiPath = Path.Combine(profileFolder, "profile.sii");
+
+                var plaintext = "active_mods[0]: \"enc_mod.scs|Encrypted Mod\"\n";
+                var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
+
+                // Create random IV
+                var iv = RandomNumberGenerator.GetBytes(16);
+                byte[] encrypted;
+                using (var aes = Aes.Create())
+                {
+                    aes.KeySize = 256;
+                    aes.Key = SIIConstants.SII_KEY;
+                    aes.IV = iv;
+                    aes.Mode = CipherMode.CBC;
+                    aes.Padding = PaddingMode.PKCS7;
+
+                    using var encryptor = aes.CreateEncryptor();
+                    encrypted = encryptor.TransformFinalBlock(plaintextBytes, 0, plaintextBytes.Length);
+                }
+
+                // Header: signature + 32-byte HMAC placeholder + IV + datasize
+                var header = new byte[4 + 32 + 16 + 4];
+                Array.Copy(BitConverter.GetBytes(SIIConstants.SII_SIGNATURE_ENCRYPTED), 0, header, 0, 4);
+                // 32 bytes HMAC placeholder are left as zeros
+                Array.Copy(iv, 0, header, 36, 16);
+                Array.Copy(BitConverter.GetBytes((uint)encrypted.Length), 0, header, 52, 4);
+
+                await File.WriteAllBytesAsync(siiPath, header.Concat(encrypted).ToArray()).ConfigureAwait(false);
+
+                var config = new BotConfig { Ets2ProfilePath = tmpDir };
+                var cacheFile = Path.Combine(tmpDir, "cache.json");
+                var cache = new ModCache(cacheFile);
+                await cache.LoadAsync().ConfigureAwait(false);
+
+                var parser = new ModParser(config, cache);
+                var profiles = await parser.ParseProfilesFromFolderAsync().ConfigureAwait(false);
+
+                profiles.Should().NotBeNull();
+                profiles.Should().HaveCountGreaterOrEqualTo(1);
+                var p = profiles.FirstOrDefault(pr => pr.ProfileName.Equals("profile_enc", StringComparison.OrdinalIgnoreCase));
+                p.Should().NotBeNull();
+                p!.ActiveMods.Should().ContainSingle();
+                p.ActiveMods[0].DisplayName.Should().Contain("Encrypted Mod");
+            }
+            finally
+            {
+                try { Directory.Delete(tmpDir, true); } catch { }
+            }
+        }
     }
 }
