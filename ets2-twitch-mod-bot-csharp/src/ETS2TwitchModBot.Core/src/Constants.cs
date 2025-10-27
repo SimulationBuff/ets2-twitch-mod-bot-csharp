@@ -155,8 +155,21 @@ namespace ETS2TwitchModBot.Core
             {
                 using var fs = File.OpenRead(scsFilePath);
                 using var za = new ZipArchive(fs, ZipArchiveMode.Read, leaveOpen: false);
-                var entry = za.GetEntry("manifest.sii") ?? za.GetEntry("manifest.sii".ToLowerInvariant());
+
+                // Fast-path: direct entry lookup (case-sensitive then lowercase)
+                ZipArchiveEntry? entry = za.GetEntry("manifest.sii") ?? za.GetEntry("manifest.sii".ToLowerInvariant());
+
+                // If direct lookup failed, search entries for any name or path that ends with "manifest.sii" (case-insensitive).
+                if (entry == null)
+                {
+                    entry = za.Entries.FirstOrDefault(e =>
+                        e.Name.Equals("manifest.sii", StringComparison.OrdinalIgnoreCase)
+                        || e.FullName.EndsWith("/manifest.sii", StringComparison.OrdinalIgnoreCase)
+                        || e.FullName.EndsWith("\\manifest.sii", StringComparison.OrdinalIgnoreCase));
+                }
+
                 if (entry == null) return null;
+
                 using var sr = new StreamReader(entry.Open(), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
                 var content = sr.ReadToEnd();
                 var m = ModNameInManifestRegex.Match(content);
