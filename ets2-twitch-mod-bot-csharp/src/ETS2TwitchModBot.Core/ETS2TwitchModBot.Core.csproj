@@ -14,8 +14,14 @@
     <RootNamespace>ETS2TwitchModBot.Core</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
-    <!-- Keep build warnings visible but not fatal for now -->
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Enforce analyzers and treat warnings as errors so CI fails on style/analysis violations -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Run Roslyn analyzers during build to enforce StyleCop / code-style rules -->
+    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
+    <!-- Use latest analysis level to pick up current analyzer rules -->
+    <AnalysisLevel>latest</AnalysisLevel>
+    <!-- Enforce editorconfig/code-style rules during build -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,6 +38,9 @@
     <!-- Twitch integration -->
     <PackageReference Include="TwitchLib.Client" Version="4.2.0" />
     <PackageReference Include="TwitchLib.Api" Version="4.1.0" />
+
+    <!-- Static analysis / style enforcement -->
+    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

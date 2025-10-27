@@ -155,8 +155,21 @@ namespace ETS2TwitchModBot.Core
             {
                 using var fs = File.OpenRead(scsFilePath);
                 using var za = new ZipArchive(fs, ZipArchiveMode.Read, leaveOpen: false);
-                var entry = za.GetEntry("manifest.sii") ?? za.GetEntry("manifest.sii".ToLowerInvariant());
+
+                // Fast-path: direct entry lookup (case-sensitive then lowercase)
+                ZipArchiveEntry? entry = za.GetEntry("manifest.sii") ?? za.GetEntry("manifest.sii".ToLowerInvariant());
+
+                // If direct lookup failed, search entries for any name or path that ends with "manifest.sii" (case-insensitive).
+                if (entry == null)
+                {
+                    entry = za.Entries.FirstOrDefault(e =>
+                        e.Name.Equals("manifest.sii", StringComparison.OrdinalIgnoreCase)
+                        || e.FullName.EndsWith("/manifest.sii", StringComparison.OrdinalIgnoreCase)
+                        || e.FullName.EndsWith("\\manifest.sii", StringComparison.OrdinalIgnoreCase));
+                }
+
                 if (entry == null) return null;
+
                 using var sr = new StreamReader(entry.Open(), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
                 var content = sr.ReadToEnd();
                 var m = ModNameInManifestRegex.Match(content);
@@ -197,24 +210,33 @@ namespace ETS2TwitchModBot.Core
                 if (cancellationToken.IsCancellationRequested) break;
                 var filename = f.Name;
                 string? displayName = null;
+                ModSource source = ModSource.Unknown;
 
                 // 1) Try manifest
                 try
                 {
-                    displayName = ParseManifestNameFromScs(f.FullName);
+                    var manifestName = ParseManifestNameFromScs(f.FullName);
+                    if (!string.IsNullOrWhiteSpace(manifestName))
+                    {
+                        displayName = manifestName;
+                        source = ModSource.Manifest;
+                        // persist manifest resolution to cache (best-effort)
+                        try { await _cache.SetAsync(filename, displayName).ConfigureAwait(false); } catch { }
+                    }
                 }
                 catch
                 {
-                    displayName = null;
+                    // ignore manifest errors and continue
                 }
 
-                // 2) Try cache (only if no manifest)
+                // 2) Try cache (only if manifest didn't yield a name)
                 if (string.IsNullOrWhiteSpace(displayName))
                 {
                     var cached = await _cache.GetAsync(filename).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(cached))
                     {
                         displayName = cached;
+                        source = ModSource.Cache;
                     }
                 }
 
@@ -232,8 +254,9 @@ namespace ETS2TwitchModBot.Core
                             if (!string.IsNullOrWhiteSpace(name))
                             {
                                 displayName = name;
+                                source = ModSource.Workshop;
                                 // persist to cache
-                                await _cache.SetAsync(filename, displayName).ConfigureAwait(false);
+                                try { await _cache.SetAsync(filename, displayName).ConfigureAwait(false); } catch { }
                             }
                         }
                         catch
@@ -247,6 +270,7 @@ namespace ETS2TwitchModBot.Core
                 if (string.IsNullOrWhiteSpace(displayName))
                 {
                     displayName = CleanFilename(filename);
+                    source = ModSource.Filename;
                     // persist to cache (best-effort)
                     try
                     {
@@ -258,7 +282,7 @@ namespace ETS2TwitchModBot.Core
                     }
                 }
 
-                var mod = new ModInfo(filename, displayName, loadOrder: 0, source: ModSource.Unknown, filePath: f.FullName);
+                var mod = new ModInfo(filename, displayName, loadOrder: 0, source: source, filePath: f.FullName);
                 list.Add(mod);
             }
 
@@ -282,6 +306,78 @@ namespace ETS2TwitchModBot.Core
             var profileName = Path.GetFileName(Path.GetDirectoryName(profileFilePath) ?? Path.GetFileNameWithoutExtension(profileFilePath));
             var p = new ProfileInfo(profileName ?? "unknown", mods, rawContent: content);
             return p;
+        }
+
+        /// <summary>
+        /// Scan the configured profiles folder and attempt to parse all discovered profile files (.sii).
+        /// This method is tolerant of multiple layout variations:
+        ///  - top-level .sii files directly in the profiles folder
+        ///  - profile subfolders containing .sii files (common Steam layout)
+        /// Returns a list of successfully parsed ProfileInfo objects.
+        /// </summary>
+        public async Task<List<ProfileInfo>> ParseProfilesFromFolderAsync(CancellationToken cancellationToken = default)
+        {
+            var outList = new List<ProfileInfo>();
+            var profilesPath = _config.Ets2ProfilePath;
+            if (string.IsNullOrWhiteSpace(profilesPath) || !Directory.Exists(profilesPath)) return outList;
+
+            var dir = new DirectoryInfo(profilesPath);
+
+            // Collect candidate .sii files (top-level and first-level subfolders)
+            var candidates = new List<FileInfo>();
+            try
+            {
+                candidates.AddRange(dir.EnumerateFiles("*.sii", SearchOption.TopDirectoryOnly));
+            }
+            catch
+            {
+                // ignore and continue
+            }
+
+            try
+            {
+                foreach (var sub in dir.EnumerateDirectories("*", SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        candidates.AddRange(sub.EnumerateFiles("*.sii", SearchOption.TopDirectoryOnly));
+                    }
+                    catch
+                    {
+                        // ignore broken folders/permission issues
+                    }
+                }
+            }
+            catch
+            {
+                // ignore enumeration issues
+            }
+
+            // Deduplicate by full path and sort for predictable ordering
+            var distinctCandidates = candidates
+                .GroupBy(f => f.FullName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .OrderBy(f => f.FullName, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            foreach (var f in distinctCandidates)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                try
+                {
+                    var parsed = await ParseProfileAsync(f.FullName, cancellationToken).ConfigureAwait(false);
+                    if (parsed != null)
+                    {
+                        outList.Add(parsed);
+                    }
+                }
+                catch
+                {
+                    // best-effort: skip files that fail to parse/decrypt
+                }
+            }
+
+            return outList;
         }
     }
 }
