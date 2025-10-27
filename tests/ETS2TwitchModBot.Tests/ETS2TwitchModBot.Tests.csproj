@@ -40,11 +40,11 @@
 
   <ItemGroup>
     <!-- Reference the core project to test its public surface -->
-    <ProjectReference Include="..\..\ets2-twitch-mod-bot-csharp\src\ETS2TwitchModBot.Core\ETS2TwitchModBot.Core.csproj" />
+    <ProjectReference Include="..\..\src\ETS2TwitchModBot.Core\ETS2TwitchModBot.Core.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
-    <!-- Enable coverlet integration when running `dotnet test` with the XPlat code coverage collector (e.g. use --collect:"XPlat Code Coverage") -->
+    <!-- Enable coverlet integration when running dotnet test with the XPlat code coverage collector (use the collect option to enable coverage) -->
     <CollectCoverage>true</CollectCoverage>
     <CoverletOutputFormat>opencover</CoverletOutputFormat>
   </PropertyGroup>

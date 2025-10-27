@@ -664,7 +664,9 @@ namespace ETS2TwitchModBot.Core
     }
 
     /// <summary>
-    /// DLC detection stub. Implement scanning of steam/profiles folders to detect enabled DLCs.
+    /// DLC detection: scan Steam install for dlc_*.scs and inspect profile files for explicit DLC tokens.
+    /// Returns friendly names using Constants.MAJOR_MAP_DLC when available, otherwise the DLC code.
+    /// This is best-effort and tolerant of IO/permission issues.
     /// </summary>
     public sealed class DLCDetector
     {
@@ -675,27 +677,92 @@ namespace ETS2TwitchModBot.Core
             _config = config ?? throw new ArgumentNullException(nameof(config));
         }
 
-        public Task<List<string>> GetActiveDlcAsync()
+        public async Task<List<string>> GetActiveDlcAsync()
         {
-            // minimal implementation: scan steam path for dlc_*.scs files and return base names
-            var outList = new List<string>();
+            var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             try
             {
+                // 1) Scan the Steam path for dlc_*.scs files (common installation layout)
                 if (!string.IsNullOrWhiteSpace(_config.Ets2SteamPath) && Directory.Exists(_config.Ets2SteamPath))
                 {
                     var dir = new DirectoryInfo(_config.Ets2SteamPath);
-                    var files = dir.EnumerateFiles("dlc_*.scs", SearchOption.TopDirectoryOnly);
-                    foreach (var f in files)
+                    try
                     {
-                        outList.Add(Path.GetFileNameWithoutExtension(f.Name));
+                        foreach (var f in dir.EnumerateFiles("dlc_*.scs", SearchOption.TopDirectoryOnly))
+                        {
+                            var name = Path.GetFileNameWithoutExtension(f.Name);
+                            // normalize: dlc_east -> east
+                            var code = name.StartsWith("dlc_", StringComparison.OrdinalIgnoreCase) ? name.Substring(4) : name;
+                            if (Constants.MAJOR_MAP_DLC.TryGetValue(code, out var friendly))
+                                results.Add(friendly);
+                            else
+                                results.Add(code);
+                        }
+                    }
+                    catch
+                    {
+                        // ignore enumeration errors for the steam path
+                    }
+                }
+
+                // 2) Inspect profile files for explicit tokens like "dlc_east" (best-effort)
+                if (!string.IsNullOrWhiteSpace(_config.Ets2ProfilePath) && Directory.Exists(_config.Ets2ProfilePath))
+                {
+                    var profDir = new DirectoryInfo(_config.Ets2ProfilePath);
+                    var candidates = new List<FileInfo>();
+                    try
+                    {
+                        candidates.AddRange(profDir.EnumerateFiles("*.sii", SearchOption.TopDirectoryOnly));
+                    }
+                    catch { }
+
+                    try
+                    {
+                        foreach (var sub in profDir.EnumerateDirectories("*", SearchOption.TopDirectoryOnly))
+                        {
+                            try
+                            {
+                                candidates.AddRange(sub.EnumerateFiles("*.sii", SearchOption.TopDirectoryOnly));
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+
+                    var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var fi in candidates)
+                    {
+                        if (!seenPaths.Add(fi.FullName)) continue;
+                        string content;
+                        try
+                        {
+                            content = await File.ReadAllTextAsync(fi.FullName).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(content, @"\b(dlc_[A-Za-z0-9_]+)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                        {
+                            var token = m.Groups[1].Value;
+                            var code = token.StartsWith("dlc_", StringComparison.OrdinalIgnoreCase) ? token.Substring(4) : token;
+                            if (Constants.MAJOR_MAP_DLC.TryGetValue(code, out var friendly))
+                                results.Add(friendly);
+                            else
+                                results.Add(code);
+                        }
                     }
                 }
             }
             catch
             {
-                // ignore and return what we have
+                // best-effort: swallow and return whatever we have collected
             }
-            return Task.FromResult(outList);
+
+            // Return a stable, ordered list (unique values)
+            return results.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
         }
     }
 
