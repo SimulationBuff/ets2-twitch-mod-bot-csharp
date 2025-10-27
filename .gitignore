@@ -7,3 +7,11 @@ venv/
 .venv/
 mod_cache.json
 utilities/
+*.egg-info/
+.eggs/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+bot_instance.lock
+.coverage
+.DS_Store
